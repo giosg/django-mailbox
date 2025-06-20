@@ -719,7 +719,7 @@ class Message(models.Model):
                 if encoding and encoding.lower() == 'quoted-printable':
                     # Cannot use `email.encoders.encode_quopri due to
                     # bug 14360: http://bugs.python.org/issue14360
-                    with open(attachment.document.path, 'rb') as f:
+                    with attachment.document.open('rb') as f:
                         output = BytesIO()
                         encode_quopri(
                             BytesIO(
@@ -735,7 +735,7 @@ class Message(models.Model):
                     del new['Content-Transfer-Encoding']
                     new['Content-Transfer-Encoding'] = 'quoted-printable'
                 else:
-                    with open(attachment.document.path, 'rb') as f:
+                    with attachment.document.open('rb') as f:
                         new.set_payload(f.read())
                     del new['Content-Transfer-Encoding']
                     encode_base64(new)
