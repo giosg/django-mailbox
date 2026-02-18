@@ -57,6 +57,8 @@ class ActiveMailboxManager(MailboxManager):
 
 
 class Mailbox(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
     name = models.CharField(
         _('Name'),
         max_length=255,
@@ -526,6 +528,8 @@ class UnreadMessageManager(models.Manager):
 
 
 class Message(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
     mailbox = models.ForeignKey(
         Mailbox,
         related_name='messages',
@@ -824,6 +828,8 @@ class Message(models.Model):
 
 
 class MessageAttachment(models.Model):
+    id = models.BigAutoField(primary_key=True)
+
     message = models.ForeignKey(
         Message,
         related_name='attachments',
