@@ -5,6 +5,8 @@ import copy
 from unittest import mock
 
 from django_mailbox.models import Mailbox, Message
+from django_mailbox.models import MessageAttachment
+from django_mailbox.signals import attachment_received
 from django_mailbox.utils import convert_header_to_unicode
 from django_mailbox import utils
 from django_mailbox.tests.base import EmailMessageTestCase
@@ -86,6 +88,68 @@ class TestProcessEmail(EmailMessageTestCase):
             attachment.get_filename(),
             'heart.png',
         )
+
+    def test_message_with_attachments_can_be_handled_by_signal_without_storage(
+        self,
+    ):
+        message = self._get_email_object('message_with_attachment.eml')
+
+        mailbox = Mailbox.objects.create()
+
+        observed = []
+
+        def handler(sender, attachment, filename, payload, message, **kwargs):
+            observed.append(
+                {
+                    'sender': sender,
+                    'attachment': attachment,
+                    'filename': filename,
+                    'payload': payload,
+                    'message': message,
+                }
+            )
+            return True
+
+        dispatch_uid = (
+            'django_mailbox.tests.'
+            'test_process_email.'
+            'test_message_with_attachments_can_be_handled_by_signal_without_storage'
+        )
+        attachment_received.connect(
+            handler, dispatch_uid=dispatch_uid, weak=False
+        )
+        try:
+            msg = mailbox.process_incoming_message(message)
+        finally:
+            attachment_received.disconnect(dispatch_uid=dispatch_uid)
+
+        self.assertEqual(1, msg.attachments.count())
+
+        attachment = msg.attachments.all()[0]
+        self.assertIsInstance(attachment, MessageAttachment)
+        self.assertFalse(bool(attachment.document))
+        self.assertEqual('', attachment.document.name)
+
+        del msg._email_object  # Cache flush to force rehydration
+        email_obj = msg.get_email_object()
+
+        dm_settings = utils.get_settings()
+        altered_header = dm_settings['altered_message_header']
+
+        altered_parts = []
+        to_visit = [email_obj]
+        while to_visit:
+            part = to_visit.pop()
+            if part.is_multipart():
+                to_visit.extend(part.get_payload())
+            else:
+                if part.get(altered_header) is not None:
+                    altered_parts.append(part)
+
+        self.assertGreaterEqual(len(observed), 1)
+        self.assertGreaterEqual(len(altered_parts), 1)
+        for part in altered_parts:
+            self.assertEqual('', part.get_payload() or '')
 
     def test_message_with_rfc822_attachment(self):
         message = self._get_email_object('message_with_rfc822_attachment.eml')

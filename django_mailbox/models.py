@@ -27,7 +27,7 @@ from django.utils.translation import gettext_lazy as _
 from django.utils.timezone import now
 
 from django_mailbox import utils
-from django_mailbox.signals import message_received
+from django_mailbox.signals import attachment_received, message_received
 from django_mailbox.transports import Pop3Transport, ImapTransport, \
     MaildirTransport, MboxTransport, BabylTransport, MHTransport, \
     MMDFTransport, GmailImapTransport, Office365Transport
@@ -343,6 +343,9 @@ class Mailbox(models.Model):
                 extension = '.bin'
 
             attachment = MessageAttachment()
+            attachment.message = record
+            for key, value in msg.items():
+                attachment[key] = value
 
             if msg.get_content_type() == 'message/rfc822':
                 attachment_payloads = msg.get_payload()
@@ -354,17 +357,24 @@ class Mailbox(models.Model):
                 attachment_payload = attachment_payloads[0].as_bytes()
             else:
                 attachment_payload = msg.get_payload(decode=True)
-            attachment.document.save(
-                uuid.uuid4().hex + extension,
-                ContentFile(
-                    BytesIO(
-                        attachment_payload
-                    ).getvalue()
-                )
+            generated_filename = uuid.uuid4().hex + extension
+
+            responses = attachment_received.send(
+                sender=MessageAttachment,
+                attachment=attachment,
+                filename=generated_filename,
+                payload=attachment_payload,
+                message=record,
             )
-            attachment.message = record
-            for key, value in msg.items():
-                attachment[key] = value
+            handled = any(response for _, response in responses)
+            if not handled:
+                attachment.document.save(
+                    generated_filename,
+                    ContentFile(
+                        BytesIO(attachment_payload).getvalue()
+                    ),
+                    save=False,
+                )
             attachment.save()
 
             placeholder = EmailMessage()
@@ -719,30 +729,36 @@ class Message(models.Model):
                 )
                 for header, value in attachment.items():
                     new[header] = value
-                encoding = new['Content-Transfer-Encoding']
-                if encoding and encoding.lower() == 'quoted-printable':
-                    # Cannot use `email.encoders.encode_quopri due to
-                    # bug 14360: http://bugs.python.org/issue14360
-                    with attachment.document.open('rb') as f:
-                        output = BytesIO()
-                        encode_quopri(
-                            BytesIO(
-                                f.read()
-                            ),
-                            output,
-                            quotetabs=True,
-                            header=False,
-                        )
-                        new.set_payload(
-                            output.getvalue().decode().replace(' ', '=20')
-                        )
-                    del new['Content-Transfer-Encoding']
-                    new['Content-Transfer-Encoding'] = 'quoted-printable'
+                if not attachment.document:
+                    new[settings['altered_message_header']] = (
+                        'Missing; no document stored'
+                    )
+                    new.set_payload('')
                 else:
-                    with attachment.document.open('rb') as f:
-                        new.set_payload(f.read())
-                    del new['Content-Transfer-Encoding']
-                    encode_base64(new)
+                    encoding = new['Content-Transfer-Encoding']
+                    if encoding and encoding.lower() == 'quoted-printable':
+                        # Cannot use `email.encoders.encode_quopri due to
+                        # bug 14360: http://bugs.python.org/issue14360
+                        with attachment.document.open('rb') as f:
+                            output = BytesIO()
+                            encode_quopri(
+                                BytesIO(
+                                    f.read()
+                                ),
+                                output,
+                                quotetabs=True,
+                                header=False,
+                            )
+                            new.set_payload(
+                                output.getvalue().decode().replace(' ', '=20')
+                            )
+                        del new['Content-Transfer-Encoding']
+                        new['Content-Transfer-Encoding'] = 'quoted-printable'
+                    else:
+                        with attachment.document.open('rb') as f:
+                            new.set_payload(f.read())
+                        del new['Content-Transfer-Encoding']
+                        encode_base64(new)
             except MessageAttachment.DoesNotExist:
                 new[settings['altered_message_header']] = (
                     'Missing; Attachment %s not found' % (
@@ -848,11 +864,13 @@ class MessageAttachment(models.Model):
     document = models.FileField(
         _('Document'),
         upload_to=utils.get_attachment_save_path,
+        blank=True,
     )
 
     def delete(self, *args, **kwargs):
         """Deletes the attachment."""
-        self.document.delete()
+        if self.document:
+            self.document.delete()
         return super().delete(*args, **kwargs)
 
     def _get_rehydrated_headers(self):
