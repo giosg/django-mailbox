@@ -24,6 +24,7 @@ class Office365Transport(EmailTransport):
     def connect(self, client_id, client_secret, tenant_id):
         try:
             import O365
+            from O365.utils import DjangoTokenBackend
         except ImportError:
             raise ValueError(
                 "Install o365 to use oauth2 auth for office365"
@@ -31,7 +32,7 @@ class Office365Transport(EmailTransport):
 
         credentials = (client_id, client_secret)
 
-        backend = O365.DjangoBackend()
+        backend = DjangoTokenBackend()
         self.account = O365.Account(credentials, auth_flow_type='credentials', tenant_id=tenant_id, token_backend=backend)
         self.account.authenticate()
 
