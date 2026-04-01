@@ -1,3 +1,3 @@
-__version__ = '4.10.6'
+__version__ = '4.10.7'
 
 default_app_config = 'django_mailbox.apps.MailBoxConfig'

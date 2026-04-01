@@ -40,9 +40,6 @@ class O365Token(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    def __str__(self):
-        return f"Token for {self.token.get('client_id', 'unknown')}"
-
 
 class MailboxQuerySet(models.QuerySet):
     def get_new_mail(self):
