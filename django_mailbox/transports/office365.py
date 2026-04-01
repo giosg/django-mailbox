@@ -2,6 +2,8 @@ import logging
 
 from django.conf import settings
 
+
+
 from .base import EmailTransport, MessageParseError
 
 logger = logging.getLogger(__name__)
@@ -30,9 +32,13 @@ class Office365Transport(EmailTransport):
                 "Install o365 to use oauth2 auth for office365"
             )
 
+        from django_mailbox.models import O365Token
+
         credentials = (client_id, client_secret)
 
-        backend = DjangoTokenBackend()
+        backend = DjangoTokenBackend(
+            token_model=O365Token,
+        )
         self.account = O365.Account(credentials, auth_flow_type='credentials', tenant_id=tenant_id, token_backend=backend)
         self.account.authenticate()
 

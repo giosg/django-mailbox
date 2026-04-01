@@ -35,6 +35,15 @@ from django_mailbox.transports import Pop3Transport, ImapTransport, \
 logger = logging.getLogger(__name__)
 
 
+class O365Token(models.Model):
+    token = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Token for {self.token.get('client_id', 'unknown')}"
+
+
 class MailboxQuerySet(models.QuerySet):
     def get_new_mail(self):
         count = 0
